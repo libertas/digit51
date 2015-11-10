@@ -29,7 +29,7 @@
 #define DG P1_6
 #define DP P1_4
 
-unsigned char buf[5];
+unsigned char buf[5] = {0};
 
 
 typedef __bit bool;
