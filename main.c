@@ -16,20 +16,6 @@
 #define BAUD 0xfe80 // 9600 at 11.0529 MHz
 
 
-#define WRITE_SECOND 0x80 
-#define WRITE_MINUTE 0x82 
-#define WRITE_HOUR 0x84 
-#define READ_SECOND 0x81 
-#define READ_MINUTE 0x83 
-#define READ_HOUR 0x85 
-#define WRITE_PROTECT 0x8E 
-#define WRITE_TRICKLE 0x90
-
-#define CE P3_2
-#define IO P3_1
-#define CLK P3_0
-
-
 #define D1 P1_1
 #define D2 P3_6
 #define D3 P3_5
@@ -42,6 +28,8 @@
 #define DF P3_7
 #define DG P1_6
 #define DP P1_4
+
+unsigned char buf[5];
 
 
 typedef __bit bool;
@@ -181,110 +169,23 @@ void writeDt(unsigned char seg, unsigned char data)
     writeBit(data);
 }
 
-void write1302(unsigned char addr, unsigned char data)
-{
-    unsigned char i, tmp;
-
-    CE = 0;
-    CLK = 0;
-    CE = 1;
-    for(i=0; i<8; i++)
-    {
-        CLK = 0;
-        tmp = addr & 0x01;
-        addr = addr >> 1;
-        if(tmp)
-            IO = 1;
-        else
-            IO = 0;
-        CLK = 1;
-        for(tmp=0; tmp<4; tmp++);  // delay
-    }
-
-    for(i=0; i<8; i++)
-    {
-        CLK = 0;
-        tmp = data & 0x01;
-        data = data >> 1;
-        if(tmp)
-            IO = 1;
-        else
-            IO = 0;
-        CLK = 1;
-        for(tmp=0; tmp<4; tmp++);  // delay
-    }
-    CE = 0;
-}
-
-unsigned char read1302(unsigned char addr)
-{
-    unsigned char i, tmp, data = 0;
-    CE = 0;
-    CLK = 0;
-    CE = 1;
-    for(i=0; i<8; i++)
-    {
-        CLK = 0;
-        tmp = addr & 0x01;
-        addr = addr >> 1;
-        if(tmp)
-            IO = 1;
-        else
-            IO = 0;
-        CLK = 1;
-        for(tmp=0; tmp<4; tmp++);  // delay
-    }
-
-    // ignoring the first zero bit
-    CLK = 0;
-    for(tmp=0; tmp<4; tmp++);  // delay
-    CLK = 1;
-
-    for(i=0; i<8; i++)
-    {
-        data = data >> 1;
-        tmp = IO;
-        if(tmp)
-            data |= 0x80;
-        CLK = 0;
-        for(tmp=0; tmp<4; tmp++);  // delay
-        CLK = 1;
-        for(tmp=0; tmp<4; tmp++);  // delay
-    }
-    CE = 0;
-    return data;
-}
-
-unsigned char getHour(const unsigned char value) {
-  unsigned char adj;
-  if (value & 128)  // 12-hour mode
-    adj = 12 * ((value & 32) >> 5);
-  else           // 24-hour mode
-    adj = 10 * ((value & (32 + 16)) >> 4);
-  return (value & 15) + adj;
-}
-
-unsigned char hour, minute;
-unsigned char point = 0x80;
-
 void timer0() __interrupt(TF0_VECTOR)
 {
     static unsigned char t;
-	static unsigned int t1;
 
     switch(t)
     {
         case 0:
-            writeDt(1, numbers[hour / 10]);
+            writeDt(1, numbers[buf[0]]);
             break;
         case 1:
-            writeDt(2, numbers[hour % 10] | point);
+            writeDt(2, numbers[buf[1]]);
             break;
         case 2:
-            writeDt(3, numbers[(minute & 0xf0) >> 4]);
+            writeDt(3, numbers[buf[2]]);
             break;
         case 3:
-            writeDt(4, numbers[minute & 0x0f]);
+            writeDt(4, numbers[buf[3]]);
             break;
         default:
 			t = -1;
@@ -292,33 +193,11 @@ void timer0() __interrupt(TF0_VECTOR)
     }
 
 	t++;
-
-	t1++;
-
-	if(t1 >= 10000)
-    {
-        t1 = 0;
-        if(point == 0x80)
-            point = 0;
-        else
-            point = 0x80;
-    }
-}
-
-void set1302Time(unsigned char h, unsigned char m)
-{
-	write1302(WRITE_PROTECT, 0x00);
-    write1302(WRITE_TRICKLE, 0xab);
-    write1302(WRITE_SECOND, 0x00);
-    write1302(WRITE_MINUTE, m);
-    write1302(WRITE_HOUR, h);
-    write1302(WRITE_PROTECT, 0x80);
 }
 
 int main()
 {
-	unsigned char buf[5], i = 0;
-	unsigned char tmpHour, tmpMinute;
+	unsigned char i = 0;
 
     TMOD = 0x02;
 
@@ -343,17 +222,10 @@ int main()
 
 	EA = 1;
 
-	// Set up the clock for the first time
-	/*
-	set1302Time(0x00, 0x00);
-	*/
-
     while(1)
     {
 		while(!REND)
 		{
-        	hour = getHour(read1302(READ_HOUR));
-        	minute = read1302(READ_MINUTE) & 0x7f;
 		}
 
 		if(i > 4)
@@ -369,22 +241,10 @@ int main()
 		{
 			if(i == 4)
 			{
-				tmpHour = 0;
-				tmpMinute = 0;
-
 				for(i = 0; i < 4; i++)
 					buf[i] -= '0';
 
-				tmpHour += buf[0] << 4 | buf[1];
-
-				tmpMinute = (buf[2] << 4) + buf[3];
-
-				set1302Time(tmpHour, tmpMinute);
-
-				hour = getHour(read1302(READ_HOUR));
-        		minute = read1302(READ_MINUTE) & 0x7f;
-
-				printf("Time saved!\n");
+				printf("Code received!\n");
 
 				i = 0;
 				continue;
