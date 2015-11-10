@@ -29,7 +29,7 @@
 #define DG P1_6
 #define DP P1_4
 
-unsigned char buf[5] = {0};
+unsigned char gmem[4] = {0};
 
 
 typedef __bit bool;
@@ -176,16 +176,16 @@ void timer0() __interrupt(TF0_VECTOR)
     switch(t)
     {
         case 0:
-            writeDt(1, numbers[buf[0]]);
+            writeDt(1, numbers[gmem[0]]);
             break;
         case 1:
-            writeDt(2, numbers[buf[1]]);
+            writeDt(2, numbers[gmem[1]]);
             break;
         case 2:
-            writeDt(3, numbers[buf[2]]);
+            writeDt(3, numbers[gmem[2]]);
             break;
         case 3:
-            writeDt(4, numbers[buf[3]]);
+            writeDt(4, numbers[gmem[3]]);
             break;
         default:
 			t = -1;
@@ -197,6 +197,7 @@ void timer0() __interrupt(TF0_VECTOR)
 
 int main()
 {
+	unsigned char buf[5];
 	unsigned char i = 0;
 
     TMOD = 0x02;
@@ -242,7 +243,9 @@ int main()
 			if(i == 4)
 			{
 				for(i = 0; i < 4; i++)
-					buf[i] -= '0';
+				{
+					gmem[i] = buf[i] - '0';
+				}
 
 				printf("Code received!\n");
 
