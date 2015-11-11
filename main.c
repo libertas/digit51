@@ -292,6 +292,11 @@ int main()
 	for(i = 0; i < 4; i++)
 	{
 		gmem[i] = readIap(i);
+		if(gmem[i] == 0xff)
+		{
+			gmem[i] = 0;
+			writeIap(i, 0);
+		}
 	}
 	i = 0;
 
