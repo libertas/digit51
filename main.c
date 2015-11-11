@@ -3,6 +3,23 @@
 #include <stc12.h>
 #include <stdio.h>
 
+#define _nop_() __asm nop __endasm
+
+__sfr __at (0xc2) IAP_DATA;
+__sfr __at (0xc3) IAP_ADDRH;
+__sfr __at (0xc4) IAP_ADDRL;
+__sfr __at (0xc5) IAP_CMD;
+__sfr __at (0xc6) IAP_TRIG;
+__sfr __at (0xc7) IAP_CONTR;
+
+#define CMD_IDLE 0
+#define CMD_READ 1
+#define CMD_PROGRAM 2
+#define CMD_ERASE 3
+
+#define ENABLE_IAP 0x83 // CLK < 12 MHz
+
+
 // Version A only
 #define RXB P0_0
 #define TXB P0_1
@@ -28,6 +45,18 @@
 #define DF P3_7
 #define DG P1_6
 #define DP P1_4
+
+
+void Delay(unsigned char t)
+{
+	unsigned int n;
+	while(t--)
+	{
+		n = 0;
+		while(++n);
+	}
+}
+
 
 unsigned char gmem[4] = {0};
 
@@ -129,6 +158,66 @@ void uart() __interrupt(TF1_VECTOR)
 	}
 }
 
+
+void idleIap()
+{
+	IAP_CONTR = 0;
+	IAP_CMD = 0;
+	IAP_TRIG = 0;
+	IAP_ADDRH = 0x80;
+	IAP_ADDRL = 0;
+}
+
+void eraseIap(unsigned int addr)
+{
+	IAP_CONTR = ENABLE_IAP;
+	IAP_CMD = CMD_ERASE;
+	IAP_ADDRL = addr;
+	IAP_ADDRH = addr >> 8;
+	IAP_TRIG = 0x5a;
+	IAP_CMD = CMD_ERASE;
+	IAP_TRIG = 0xa5;
+	_nop_();
+
+	idleIap();
+}
+
+unsigned char readIap(unsigned int addr)
+{
+	unsigned char data;
+
+	IAP_CONTR = ENABLE_IAP;
+	IAP_CMD = CMD_READ;
+	IAP_ADDRL = addr;
+	IAP_ADDRH = addr >> 8;
+	IAP_TRIG = 0x5a;
+	IAP_CMD = CMD_READ;
+	IAP_TRIG = 0xa5;
+	_nop_();
+
+	data = IAP_DATA;
+
+	idleIap();
+
+	return data;
+}
+
+void writeIap(unsigned int addr, unsigned char data)
+{
+	IAP_CONTR = ENABLE_IAP;
+	IAP_CMD = CMD_PROGRAM;
+	IAP_ADDRL = addr;
+	IAP_ADDRH = addr >> 8;
+	IAP_DATA = data;
+	IAP_TRIG = 0x5a;
+	IAP_CMD = CMD_PROGRAM;
+	IAP_TRIG = 0xa5;
+	_nop_();
+
+	idleIap();
+}
+
+
 unsigned char numbers[10] = {0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f};
 
 void writeSeg(unsigned char data)
@@ -200,6 +289,12 @@ int main()
 	unsigned char buf[5];
 	unsigned char i = 0;
 
+	for(i = 0; i < 4; i++)
+	{
+		gmem[i] = readIap(i);
+	}
+	i = 0;
+
     TMOD = 0x02;
 
     TR0 = 1;
@@ -242,9 +337,12 @@ int main()
 		{
 			if(i == 4)
 			{
+				eraseIap(0);
+
 				for(i = 0; i < 4; i++)
 				{
 					gmem[i] = buf[i] - '0';
+					writeIap(i, gmem[i]);
 				}
 
 				printf("Code received!\n");
